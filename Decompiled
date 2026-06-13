@@ -1,0 +1,144 @@
+• # Inside let_me_free-0.7.1.jar: A Minecraft Horror Mod With Real Security Risks
+
+  A static security review of let_me_free-0.7.1.jar found that the Minecraft Fabric mod extends its horror experience beyond the game. It can collect network information, open operating-system terminals, create files, and suspend
+  players’ computers.
+
+  More seriously, weaknesses in its implementation could allow a malicious Minecraft server to execute arbitrary commands on Windows computers running the mod.
+
+  ## What Was Examined
+
+  The reviewed file was:
+
+  let_me_free-0.7.1.jar
+  SHA-256: 43cd329c556627aa927a9edf311f557e49b7f2f6e7ffff0d508e3b9960de3aad
+
+  The JAR is an unsigned Fabric mod targeting Minecraft 1.21.11. Its archive contains 148 Java class files alongside expected textures, sounds, and JSON resources.
+
+  The review included:
+
+  - Archive integrity and signature checks
+  - File and resource inventory
+  - Java bytecode disassembly
+  - Decompilation of the mod’s classes
+  - Searches for command execution, networking, filesystem access, persistence, credential theft, and obfuscation
+  - ClamAV scanning
+
+  The JAR was inspected statically and was not launched inside Minecraft.
+
+  ## Server-Controlled Computer Suspension
+
+  The mod registers a server-to-client packet named horrormod:shutdown. When a client receives this packet, the mod immediately attempts to suspend the computer.
+
+  It executes different commands depending on the operating system:
+
+  Windows: rundll32.exe powrprof.dll,SetSuspendState 0,1,0
+  macOS:   pmset sleepnow
+  Linux:   systemctl suspend
+
+  The client does not ask for confirmation before executing the command.
+
+  This feature is enabled by default. It can be triggered by normal horror events, privileged commands, certain chat messages, or repeatedly attempting to sleep in a Minecraft bed.
+
+  Although the mod displays a warning mentioning computer interactions, allowing a game server to suspend a player’s computer remains a substantial security and availability risk.
+
+  ## Remote Command Execution Risk
+
+  The most severe finding affects Windows clients.
+
+  The mod accepts server-provided terminal messages through a horrormod:terminal packet. It writes those messages into a temporary .bat file and executes the file using cmd.exe.
+
+  The mod attempts to sanitize messages by escaping ampersands. However, Windows batch files support several other command-control characters. Characters such as pipes and carriage returns are not safely handled.
+
+  As a result, a malicious or compromised Minecraft server could potentially construct a terminal message that executes arbitrary Windows commands.
+
+  The packet limits messages to approximately 4,096 characters, but that is more than sufficient for many harmful commands. Successful exploitation would run with the same operating-system permissions as Minecraft.
+
+  Linux and macOS messages receive more appropriate single-quote escaping. No equivalent direct message-injection issue was confirmed for those platforms, although the mod still deliberately creates and executes shell scripts.
+
+  ## Hardcoded Privileged Passcode
+
+  The mod protects powerful /horror commands with a passcode. However, that passcode is hardcoded directly into the distributed JAR:
+
+  LMF2015
+
+  Anyone with access to the mod can extract this passcode. A player who uses it can unlock commands capable of targeting other players with terminal windows, computer suspension, visual effects, and disruptive events.
+
+  A hardcoded shared secret inside publicly distributed client software cannot provide meaningful authorization.
+
+  ## Unprotected Configuration Commands
+
+  The /horror_config command does not appear to require operator permissions or the privileged passcode.
+
+  Any player may therefore be able to change server-wide settings, including:
+
+  - Enabling computer-suspension behavior
+  - Enforcing minimum volume settings
+  - Enabling flashing images
+  - Changing jumpscare sound behavior
+
+  This is particularly dangerous because the shutdown option is not included in the configuration packet synchronized to clients. A server can enable it without giving affected clients meaningful control over the setting.
+
+  ## Public IP and Operating-System Collection
+
+  Whenever the client joins a server, the mod contacts one of these services:
+
+  https://api.ipify.org
+  https://checkip.amazonaws.com
+
+  It retrieves the player’s public IP address, reads the operating system name, and sends both values to the Minecraft server through a custom packet.
+
+  The server stores this information and may use the IP address to look up the player’s country through:
+
+  http://ip-api.com
+
+  The country lookup uses unencrypted HTTP.
+
+  This behavior does not appear to steal credentials or authentication tokens, but it unnecessarily exposes client information to every server running the mod.
+
+  ## Filesystem and Terminal Activity
+
+  The mod creates temporary .bat and .sh scripts to display terminal messages. These files are made executable where appropriate and are not deleted afterward.
+
+  It can also create a file named recording 1.txt on the player’s Desktop as part of a horror event.
+
+  No persistence mechanism, host-file deletion behavior, or attempt to overwrite unrelated user files was identified. Nevertheless, a Minecraft mod creating and executing host-level scripts is an unusually dangerous design choice.
+
+  ## Additional Safety Concerns
+
+  The mod can remotely alter several client settings and behaviors:
+
+  - Force the game’s master volume to 100%
+  - Play sudden loud sounds
+  - Display full-screen flashing images
+  - Invert mouse controls
+  - Change render distance
+  - Force the player’s camera toward coordinates
+  - Open terminal windows
+  - Disconnect the player or stop a hosted game
+
+  Some network-provided visual parameters are insufficiently validated. For example, malformed flashing-image timing values could cause a divide-by-zero error and crash the client.
+
+  ## What Was Not Found
+
+  The review did not identify code designed to steal:
+
+  - Minecraft authentication tokens
+  - Browser credentials
+  - Discord tokens
+  - SSH keys
+  - Passwords
+  - Cryptocurrency wallets
+
+  The archive did not contain native executables, bundled secondary JARs, or obvious persistence mechanisms.
+
+  ClamAV did not report a known malware signature. However, antivirus results do not make this JAR safe. Its most serious problems are legitimate Java features being used dangerously rather than recognizable malware components.
+
+  ## Conclusion
+
+  let_me_free-0.7.1.jar should not be considered safe to run.
+
+  Some of its host-computer interactions are intentional and disclosed by an in-game warning. However, the mod’s design gives Minecraft servers excessive control over client computers. The Windows terminal-message implementation creates
+  a credible remote command execution vulnerability, while the hardcoded passcode and unprotected configuration commands make abuse significantly easier.
+
+  Players should remove or quarantine this version and use a version with all computer-interaction features removed. Any safe replacement should eliminate host command execution entirely, stop collecting public IP addresses, require
+  proper server permissions, and validate every value received from network packets.
